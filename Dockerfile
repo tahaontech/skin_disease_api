@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8585
 
 # Set the entry point for the container
-CMD ["python", "app.py"]
+CMD ["python", "api.py"]
