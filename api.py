@@ -17,15 +17,7 @@ model = load_model("./skin_disease_weights/skindect_model.h5")
 embedding_model = Model(inputs=model.input,
                                  outputs=model.get_layer("dense").output)
 
-# {'1. Enfeksiyonel': 0,
-#  '2. Ekzama': 1,
-#  '3. Akne': 2,
-#  '4. Pigment': 3,
-#  '5. Benign': 4,
-#  '6. Malign': 5}1
 
-class_names = ['Infectious', 'Eczema', 'Acne', 'Pigment', 'Benign', 'Malignant']
-class_names_persian = ['عفونی', 'اگزما', 'جوش‌های چربی (آکنه)', 'رنگدانه', 'خوش‌خیم', 'بدخیم']
 
 client = chromadb.PersistentClient(path="./chroma")
 collection = client.get_collection(name="diseases")
@@ -40,43 +32,53 @@ def embedding_fn(img):
     return predictions[0].tolist()
 
 
+translated_list = {
+    'Acne': 'آکنه',
+    'Actinic_Keratosis': 'کراتوز اکتینیک',
+    'Atopic_Dermatitis(Eczema)': 'درماتیت آتوپیک (اگزما)',
+    'Basal_Cell_Carcinoma': 'کارسینوم سلول پایه',
+    'Blisters': 'تاول',
+    'Cellulitis': 'سلولیت',
+    'Chickenpox': 'آبله مرغان',
+    'Cold_Sores(Herpes Simplex)': 'زخم سرد (هرپس سیمپلکس)',
+    'Contact_Dermatitis': 'درماتیت تماسی',
+    'Cutaneous_Candidiasis': 'کاندیدیاز پوستی',
+    'Dermatofibroma': 'درماتوفیبروم',
+    'Drug_Rashes': 'راش‌های دارویی',
+    'Erythema_Multiforme': 'اریتم مولتی‌فرم',
+    'Folliculitis': 'فولیکولیت',
+    'Herpes_Zoster(Shingles)': 'هرپس زوستر (زونا)',
+    'Hives(Urticaria)': 'کهیر (اورتیکاریا)',
+    'Impetigo': 'ایمپی تیگو',
+    'Kaposis_Sarcoma': 'سارکوم کاپوزی',
+    'Keloids': 'کلوئید',
+    'Lichen_Planus': 'لیکن پلان',
+    'Lupos': 'لوپوس',
+    'Measles': 'سرخک',
+    'Melanoma': 'ملانوما',
+    'Moles(Nevi)': 'خال‌ها (نووس)',
+    'Pityriasis_Rosea': 'پیتریازیس رزا',
+    'Psoriasis': 'پسوریازیس',
+    'Ringworm(Tinea)': 'قارچ پوستی (تینیا)',
+    'Rosacea': 'روزاسه',
+    'Scabies': 'جرب',
+    'Seborrheic_Dermatitis': 'درماتیت سبورئیک',
+    'Seborrheic_Keratosis': 'کراتوز سبورئیک',
+    'Squamous_Cell_Carcinoma': 'کارسینوم سلول سنگفرشی',
+    'Sunburn': 'آفتاب‌سوختگی',
+    'Tinea_Versicolor': 'تینیا ورسیکالر',
+    'Vitiligo': 'ویتیلیگو',
+    'Warts(Human Papillomavirus)': 'زگیل (ویروس پاپیلومای انسانی)'
+}
+
+num_results = 5
+
 app = Flask(__name__)
 
 
 @app.route('/', methods=["GET"])
 def index():
-    return jsonify({ "message": "ok"}), 200
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file provided"}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({"error": "No file selected"}), 400
-    
-    if file:
-        img = Image.open(file)
-        img = img.resize((299, 299))  # Resize image to match model's expected input size
-        img = img_to_array(img)
-        img = np.expand_dims(img, axis=0)  # Add batch dimension
-        
-        # Make prediction
-        predictions = model.predict(img)
-        print(predictions)
-        predicted_class = np.argmax(predictions, axis=1)[0]
-        print("p class", predicted_class)
-        predicted_label = class_names[predicted_class]
-        predicted_label_P = class_names_persian[predicted_class]
-        confidence = float(predictions[0][predicted_class])
-        print(confidence)
-        if confidence < 0.40:
-            return jsonify({'message': "پوست سالم است"})
-        return jsonify({"predicted_class": predicted_label, "predicted_class_persian": predicted_label_P, "confidence": confidence})
-    
-    return jsonify({"error": "Unknown error"}), 500
+    return jsonify({ "message": "ok", "classes": translated_list}), 200
 
 
 @app.route('/predict_v2', methods=['POST'])
@@ -95,10 +97,13 @@ def predict_v2():
         
         res = collection.query(
             query_embeddings=[embedding],
-            n_results=3,
+            n_results=num_results,
         )
 
-        return jsonify({"predicted_class": res["metadatas"][0][0]["class"]})
+        cls = [res["metadatas"][0][i]["class"] for i in range(num_results)]
+        distanses = [res["distances"][0][i] for i in range(num_results)]
+
+        return jsonify({"predicted_class": cls, "predicted_class_persian": [translated_list[cl] for cl in cls], "distances": distanses})
     
     return jsonify({"error": "Unknown error"}), 500
 
