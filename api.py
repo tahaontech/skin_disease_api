@@ -1,15 +1,21 @@
 # pip install Flask tensorflow pillow
+import os
 from flask import Flask, request, jsonify
 from tensorflow.keras.preprocessing.image import img_to_array
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import Model, load_model
 
 from PIL import Image
+import chromadb
+
 
 print("tensorflow version: ", tf.keras.__version__)
 
 model = load_model("./skin_disease_weights/skindect_model.h5")
+
+embedding_model = Model(inputs=model.input,
+                                 outputs=model.get_layer("dense").output)
 
 # {'1. Enfeksiyonel': 0,
 #  '2. Ekzama': 1,
@@ -20,6 +26,19 @@ model = load_model("./skin_disease_weights/skindect_model.h5")
 
 class_names = ['Infectious', 'Eczema', 'Acne', 'Pigment', 'Benign', 'Malignant']
 class_names_persian = ['عفونی', 'اگزما', 'جوش‌های چربی (آکنه)', 'رنگدانه', 'خوش‌خیم', 'بدخیم']
+
+client = chromadb.PersistentClient(path="./chroma")
+collection = client.get_collection(name="diseases")
+
+def embedding_fn(img):
+    img = img.resize((299, 299))  # Resize image to match model's expected input size
+    img = img_to_array(img)
+    img = np.expand_dims(img, axis=0)  # Add batch dimension
+        
+    # Make prediction
+    predictions = embedding_model.predict(img)
+    return predictions[0].tolist()
+
 
 app = Flask(__name__)
 
@@ -56,6 +75,30 @@ def predict():
         if confidence < 0.40:
             return jsonify({'message': "پوست سالم است"})
         return jsonify({"predicted_class": predicted_label, "predicted_class_persian": predicted_label_P, "confidence": confidence})
+    
+    return jsonify({"error": "Unknown error"}), 500
+
+
+@app.route('/predict_v2', methods=['POST'])
+def predict_v2():
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    if file:
+        img = Image.open(file)
+        embedding = embedding_fn(img)  # Add batch dimension
+        
+        res = collection.query(
+            query_embeddings=[embedding],
+            n_results=3,
+        )
+
+        return jsonify({"predicted_class": res["metadatas"][0][0]["class"]})
     
     return jsonify({"error": "Unknown error"}), 500
 

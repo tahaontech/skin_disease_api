@@ -2,3 +2,5 @@ dataset
 venv
 skin_disease_weights/skindect_model.h5
 skin_disease.zip
+data
+__pycache__

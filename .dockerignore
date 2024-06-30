@@ -1,3 +1,5 @@
 venv
 dataset
 skin_disease.zip
+data
+__pycache__
